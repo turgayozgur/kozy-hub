@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.AspNetCore.Authorization;
 using System.Collections.Concurrent;
 
 namespace Hub.Api.Hubs;
@@ -78,7 +77,6 @@ public class MainHub : Microsoft.AspNetCore.SignalR.Hub
         await Clients.Caller.SendAsync("DeviceSessionInitResult", key, name, true);
     }
 
-    [Authorize]
     public async Task SubscribeToDevices(string keys)
     {
         var items = keys.Split(',');
@@ -87,20 +85,17 @@ public class MainHub : Microsoft.AspNetCore.SignalR.Hub
 
         foreach (var key in items)
         {
-            if (!DeviceSessions.TryGetValue(key, out var session))
+            if (DeviceSessions.TryGetValue(key, out var session))
             {
-                continue;
+                await Clients.Caller.SendAsync("DeviceConnected", key, session.Name, true);
             }
 
             var groupName = GetUserDeviceSubscriptionGroup(key);
         
             await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
-
-            await Clients.Caller.SendAsync("SubscriptionResult", key, session.Name, true);
         }
     }
 
-    [Authorize]
     public async Task SendToDevice(string key, string name, object payload)
     {
         if (!DeviceSessions.TryGetValue(key, out var session))
