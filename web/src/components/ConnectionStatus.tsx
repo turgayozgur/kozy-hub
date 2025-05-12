@@ -4,19 +4,14 @@ import { signalRService } from '../lib/signalrService';
 import type { ConnectionState } from '../lib/signalrService';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { Button } from './ui/button';
-import { Icon } from '@iconify/react';
+import { Circle, CircleDot, CircleDashed } from 'lucide-react';
 
-// Icon settings for circle style
-const iconSets = {
-  circle: {
-    connected: "ph:circle-fill",
-    connecting: "ph:circle-half-fill",
-    disconnected: "ph:circle"
-  }
+// Choose your preferred icons from Lucide
+const iconSet = {
+  connected: CircleDot,
+  connecting: CircleDashed,
+  disconnected: Circle
 };
-
-// Choose your preferred icon set here
-const activeIconSet = iconSets.circle;
 
 export function ConnectionStatus() {
   const { connectionState, connectSignalR } = useSignalR();
@@ -99,7 +94,6 @@ export function ConnectionStatus() {
 
   // Get icon size and style
   const getIconStyles = () => {
-    // Circle icons size
     return 'h-3 w-3'; // Small dots for circle icons
   };
 
@@ -129,33 +123,22 @@ export function ConnectionStatus() {
     const animationClass = getAnimationClass();
     const className = `${sizeClass} ${colorClass} ${animationClass}`;
     
-    switch (displayState) {
-      case 'connected':
-        return {
-          icon: <Icon icon={activeIconSet.connected} className={className} />,
-          tooltip: 'Connected',
-          clickable: false
-        };
-      case 'connecting':
-      case 'reconnecting':
-        return {
-          icon: <Icon icon={activeIconSet.connecting} className={className} />,
-          tooltip: 'Connecting...',
-          clickable: false
-        };
-      case 'disconnected':
-        return {
-          icon: <Icon icon={activeIconSet.disconnected} className={className} />,
-          tooltip: 'Click to reconnect',
-          clickable: true
-        };
-      default:
-        return {
-          icon: <Icon icon={activeIconSet.disconnected} className={`${sizeClass} text-zinc-400`} />,
-          tooltip: 'Connection status unknown',
-          clickable: false
-        };
-    }
+    const Icon = (() => {
+      switch (displayState) {
+        case 'connected': return iconSet.connected;
+        case 'connecting':
+        case 'reconnecting': return iconSet.connecting;
+        case 'disconnected': return iconSet.disconnected;
+        default: return iconSet.disconnected;
+      }
+    })();
+    
+    return {
+      icon: <Icon className={className} />,
+      tooltip: displayState === 'connected' ? 'Connected' :
+              displayState === 'disconnected' ? 'Click to reconnect' : 'Connecting...',
+      clickable: displayState === 'disconnected'
+    };
   };
 
   const { icon, tooltip, clickable } = getConnectionDisplay();
@@ -177,8 +160,7 @@ export function ConnectionStatus() {
               className={buttonClass}
             >
               {isReconnecting ? (
-                <Icon 
-                  icon={activeIconSet.connecting} 
+                <CircleDashed 
                   className={`${getIconStyles()} text-yellow-500 animate-pulse`} 
                 />
               ) : icon}

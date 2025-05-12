@@ -1,11 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSignalR } from '../lib/SignalRContext';
 import { Button } from './ui/button';
-import { X } from 'lucide-react';
+import { Monitor, X } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from './ui/dialog';
 
 export function DeviceList() {
   const { devices } = useSignalR();
   const [savedKeys, setSavedKeys] = useState<{ key: string; label: string }[]>([]);
+  const [deviceToRemove, setDeviceToRemove] = useState<{ key: string; label: string } | null>(null);
+  const dialogCloseRef = useRef<HTMLButtonElement>(null);
   
   // Load saved keys from localStorage
   useEffect(() => {
@@ -40,14 +50,25 @@ export function DeviceList() {
     };
   });
   
+  // Open confirmation dialog before removing a device
+  const openRemoveConfirmation = (device: { key: string; label: string }) => {
+    setDeviceToRemove(device);
+  };
+  
   // Function to handle removing a device
-  const handleRemoveDevice = (key: string) => {
-    const updated = savedKeys.filter(k => k.key !== key);
+  const handleRemoveDevice = () => {
+    if (!deviceToRemove) return;
+    
+    const updated = savedKeys.filter(k => k.key !== deviceToRemove.key);
     setSavedKeys(updated);
     localStorage.setItem('deviceKeys', JSON.stringify(updated));
     
     // Dispatch storage event to notify other components
     window.dispatchEvent(new Event('storage'));
+    
+    // Close dialog and reset deviceToRemove
+    dialogCloseRef.current?.click();
+    setDeviceToRemove(null);
   };
   
   if (enhancedDevices.length === 0) {
@@ -55,28 +76,63 @@ export function DeviceList() {
   }
   
   return (
-    <div className="flex flex-wrap gap-3 mb-6">
-      {enhancedDevices.map((device) => (
-        <div 
-          key={device.key}
-          className="flex items-center gap-2 p-2 pl-3 pr-2 bg-card border rounded-lg shadow-sm"
-        >
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${device.isConnected ? 'bg-green-500' : 'bg-zinc-400'}`} />
-            <span className="font-medium text-sm">{device.label}</span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0 rounded-full"
-            onClick={() => handleRemoveDevice(device.key)}
-            title="Remove device"
+    <>
+      <div className="flex flex-wrap gap-3 mb-6">
+        {enhancedDevices.map((device) => (
+          <div 
+            key={device.key}
+            className={`flex items-center gap-2 p-2 pl-3 pr-2 rounded-lg shadow-sm border ${
+              device.isConnected 
+                ? 'border-green-200 dark:border-green-800 bg-green-50/80 dark:bg-green-900/10' 
+                : 'border-border bg-card'
+            }`}
           >
-            <X className="h-3 w-3" />
-            <span className="sr-only">Remove</span>
-          </Button>
-        </div>
-      ))}
-    </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Monitor className="h-4 w-4 text-muted-foreground" />
+                <div 
+                  className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${
+                    device.isConnected ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                  }`}
+                />
+              </div>
+              <span className="font-medium text-sm">{device.label}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 rounded-full"
+              onClick={() => openRemoveConfirmation(device)}
+              title="Remove device"
+            >
+              <X className="h-3 w-3" />
+              <span className="sr-only">Remove</span>
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <Dialog open={!!deviceToRemove} onOpenChange={(open) => !open && setDeviceToRemove(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Device</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            Are you sure you want to remove {deviceToRemove?.label}?
+          </div>
+          <DialogFooter>
+            <DialogClose asChild ref={dialogCloseRef}>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button 
+              variant="destructive" 
+              onClick={handleRemoveDevice}
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 } 

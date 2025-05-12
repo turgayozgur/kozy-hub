@@ -48,7 +48,7 @@ public class MainHub : Microsoft.AspNetCore.SignalR.Hub
         await base.OnDisconnectedAsync(exception);
     }
 
-    public async Task InitializeDeviceSession(string key, string name)
+    public async Task InitializeDeviceSession(string key, string name, object payload)
     {
         if (string.IsNullOrEmpty(key))
         {
@@ -68,11 +68,12 @@ public class MainHub : Microsoft.AspNetCore.SignalR.Hub
         {
             Name = name,
             ConnectionId = Context.ConnectionId,
+            Payload = payload
         };
 
         DeviceSessions.AddOrUpdate(key, session, (_, _) => session);
 
-        await Clients.Group(GetUserDeviceSubscriptionGroup(key)).SendAsync("DeviceConnected", key, name, true);
+        await Clients.Group(GetUserDeviceSubscriptionGroup(key)).SendAsync("DeviceConnected", key, name, payload);
         
         await Clients.Caller.SendAsync("DeviceSessionInitResult", key, name, true);
     }
@@ -87,7 +88,7 @@ public class MainHub : Microsoft.AspNetCore.SignalR.Hub
         {
             if (DeviceSessions.TryGetValue(key, out var session))
             {
-                await Clients.Caller.SendAsync("DeviceConnected", key, session.Name, true);
+                await Clients.Caller.SendAsync("DeviceConnected", key, session.Name, session.Payload);
             }
 
             var groupName = GetUserDeviceSubscriptionGroup(key);
