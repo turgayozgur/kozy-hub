@@ -9,7 +9,7 @@ function App() {
       <SignalRProvider>
         <div className="min-h-screen flex flex-col">
           <Navbar />
-          <main className="flex-1 container py-6">
+          <main className="flex-1">
             <DeviceHub />
           </main>
           <footer className="border-t py-4">
