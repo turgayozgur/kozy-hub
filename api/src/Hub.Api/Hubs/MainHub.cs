@@ -110,14 +110,6 @@ public class MainHub : Microsoft.AspNetCore.SignalR.Hub
         await Clients.Caller.SendAsync("SendResult", key, name, true);
     }
 
-    public async Task SendResponseFromDevice(string initiatorWebConnectionId, string originalName,
-        object payload)
-    {
-        await Clients.Client(initiatorWebConnectionId).SendAsync("ReceiveResponseFromDevice",
-            Context.Items[DeviceContextKeyName],
-            originalName, payload);
-    }
-
     public async Task SendToUsers(string name, object payload)
     {
         var key = (string)Context.Items[DeviceContextKeyName]!;

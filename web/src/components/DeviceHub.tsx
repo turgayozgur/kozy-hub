@@ -76,7 +76,7 @@ export function DeviceHub() {
   }, [isConnected, subscribeToDevices, subscribedKeys]);
 
   return (
-    <div className="container py-4">
+    <div className="container py-2 md:py-4">
       <DeviceList />
     </div>
   );

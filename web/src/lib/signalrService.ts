@@ -16,7 +16,7 @@ class SignalRService {
   private onReceiveFromDeviceCallbacks: ((key: string, name: string, payload: any) => void)[] = [];
   private onReceiveResponseFromDeviceCallbacks: ((key: string, name: string, payload: any) => void)[] = [];
   private onConnectionStateChangedCallbacks: ((state: ConnectionState) => void)[] = [];
-  private currentState: ConnectionState = 'disconnected';
+  private currentState: ConnectionState = 'connecting';
   private reconnectTimeout: number | null = null;
   private lastHubUrl: string | null = null;
   private lastToken: string | null = null;
@@ -191,10 +191,31 @@ class SignalRService {
   private registerHandlers(): void {
     if (!this.connection) return;
 
-    this.connection.on('DeviceConnected', (key: string, name: string, status: boolean) => {
-      const device = { key, name, isConnected: status };
+    this.connection.on('DeviceConnected', (key: string, name: string, payload: any) => {
+      // Device session kaydı
+      const device = { key, name, isConnected: true };
       this.deviceSessions.set(key, device);
       this.onDeviceConnectedCallbacks.forEach(callback => callback(device));
+      
+      // Global olay olarak da yayınla (payload ile birlikte)
+      if (typeof window !== 'undefined' && document) {
+        // device-connected olayı tüm potansiyel dinleyiciler için
+        const deviceEvent = new CustomEvent('signalr-device-connected', {
+          detail: { key, name, isConnected: true, payload }
+        });
+        document.dispatchEvent(deviceEvent);
+        
+        // Özel olarak tanımladığımız device-connected olayı (DeviceList.tsx için)
+        const customEvent = new CustomEvent('device-connected', {
+          detail: { 
+            key, 
+            name, 
+            isConnected: true,
+            payload: payload // Use the original payload from the device
+          }
+        });
+        document.dispatchEvent(customEvent);
+      }
     });
 
     this.connection.on('DeviceDisconnected', (key: string, name: string, status: boolean) => {
@@ -207,10 +228,57 @@ class SignalRService {
 
     this.connection.on('ReceiveFromDevice', (key: string, name: string, payload: any) => {
       this.onReceiveFromDeviceCallbacks.forEach(callback => callback(key, name, payload));
+      
+      // Global olay olarak da yayınla
+      if (typeof window !== 'undefined' && document) {
+        const event = new CustomEvent('signalr-message', {
+          detail: { key, name, payload }
+        });
+        document.dispatchEvent(event);
+        
+        // Command mesaj tipini kontrol et, command bilgisi artık payload içinde
+        if (name === 'command' && payload) {
+          console.log(`Processing command status update for device ${key}:`, payload);
+          
+          // Command adını ve status bilgisini payload'dan al
+          const commandName = payload.command || payload.name || 'unknown';
+          const status = payload.status || 'idle';
+          
+          // Create a device-response event for the UI components
+          const responseEvent = new CustomEvent('device-response', {
+            detail: { 
+              key, 
+              originalName: commandName, // Komut adı artık payload içinden geliyor
+              payload // Komutla ilgili tüm bilgiler payload içinde
+            }
+          });
+          
+          // Dispatch the response event for command components to listen for
+          document.dispatchEvent(responseEvent);
+          
+          // Also dispatch a general response event
+          const generalEvent = new CustomEvent('signalr-response', {
+            detail: { 
+              key, 
+              name: commandName, 
+              payload 
+            }
+          });
+          document.dispatchEvent(generalEvent);
+        }
+      }
     });
 
     this.connection.on('ReceiveResponseFromDevice', (key: string, name: string, payload: any) => {
       this.onReceiveResponseFromDeviceCallbacks.forEach(callback => callback(key, name, payload));
+      
+      // Global olay olarak da yayınla
+      if (typeof window !== 'undefined' && document) {
+        const event = new CustomEvent('signalr-response', {
+          detail: { key, name, payload }
+        });
+        document.dispatchEvent(event);
+      }
     });
   }
 
@@ -244,7 +312,16 @@ class SignalRService {
     }
 
     try {
-      await this.connection.invoke('SendToDevice', key, name, payload);
+      // Eğer bu bir komut ise, name ve payload yapısını yeni formata dönüştür
+      if (name && !payload && typeof name === 'string') {
+        // Bu durumda name parametresi gerçekte komut adı, payload null
+        // Yeni yapıya dönüştür: name="command", payload={command: eskiName}
+        console.log(`Sending command to device ${key}: ${name}`);
+        await this.connection.invoke('SendToDevice', key, 'command', { command: name });
+      } else {
+        // Standard message sending
+        await this.connection.invoke('SendToDevice', key, name, payload);
+      }
     } catch (error) {
       console.error('Error sending message to device:', error);
       throw error;

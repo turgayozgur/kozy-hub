@@ -94,7 +94,13 @@ export class DeviceService {
       const payload = {
         deviceType: 'web-test-device',
         version: '1.0.0',
-        capabilities: ['messaging']
+        capabilities: ['messaging'],
+        commands: [
+          'Party kabul et',
+          '10 item trade et',
+          'VIP\'den silah al',
+          'Town at'
+        ]
       };
 
       // Call the InitializeDeviceSession method on the hub
@@ -179,12 +185,22 @@ export class DeviceService {
     }
 
     try {
+      // Kullanıcıya yanıt gönderirken SendToUsers kullan
+      // Yanıt payload'ına özel bilgiler ekle
+      const responsePayload = {
+        ...payload,
+        _responseType: 'deviceResponse',
+        _originalRequest: originalName,
+        _targetConnectionId: initiatorWebConnectionId // Hangi kullanıcıya yanıt olduğunu belirtmek için
+      };
+      
+      // Hub metodu olarak SendToUsers kullan
       await this.connection.invoke(
-        'SendResponseFromDevice', 
-        initiatorWebConnectionId, 
-        originalName, 
-        payload
+        'SendToUsers', 
+        originalName, // Mesaj tipi (command için "command")
+        responsePayload // Genişletilmiş payload
       );
+      
       console.log(`Device sent response to user ${initiatorWebConnectionId}:`, { originalName, payload });
     } catch (error) {
       console.error('Error sending response to user:', error);
