@@ -147,11 +147,25 @@ export const SignalRProvider = ({ children }: SignalRProviderProps) => {
       setDevices(prev => {
         const exists = prev.some(d => d.key === device.key);
         if (exists) {
-          return prev.map(d => d.key === device.key ? { ...d, isConnected: true } : d);
+          return prev.map(d => d.key === device.key ? { ...d, isConnected: true, name: device.name } : d);
         } else {
           return [...prev, device];
         }
       });
+      
+      // Trigger manual device update event to ensure UI is updated immediately
+      if (typeof window !== 'undefined' && document) {
+        // This will force the DeviceList component to update the device name
+        const updateEvent = new CustomEvent('manual-device-update', {
+          detail: { 
+            key: device.key, 
+            name: device.name 
+          }
+        });
+        setTimeout(() => {
+          document.dispatchEvent(updateEvent);
+        }, 100);
+      }
     });
 
     signalRService.onDeviceDisconnected((device) => {

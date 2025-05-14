@@ -215,6 +215,12 @@ class SignalRService {
           }
         });
         document.dispatchEvent(customEvent);
+        
+        // Also dispatch a manual-device-update event to ensure name is updated
+        const updateEvent = new CustomEvent('manual-device-update', {
+          detail: { key, name }
+        });
+        document.dispatchEvent(updateEvent);
       }
     });
 

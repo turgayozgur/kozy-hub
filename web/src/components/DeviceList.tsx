@@ -1,11 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSignalR } from '../lib/SignalRContext';
 import { Button } from './ui/button';
-import {
-  Monitor, X, Plus, SendHorizontal, CheckCircle, XCircle, AlertCircle, Clock,
-  Loader2, RefreshCw, FlaskConical, Hourglass, ShieldAlert, FileCheck, Bolt,
-  ChevronRight, MoreHorizontal, Image as ImageIcon
-} from 'lucide-react';
+import { Monitor, X, Plus } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -15,765 +11,172 @@ import {
   DialogClose,
 } from './ui/dialog';
 import { createPortal } from 'react-dom';
-
-// Komut durumları için tip tanımlaması
-type CommandStatus = 'idle' | 'sending' | 'accepted' | 'running' | 'completed' | 'failed' | 'timeout' | 'no-response';
-
-// Komut yönetimi için arayüz
-interface DeviceCommand {
-  name: string;
-  status: CommandStatus;
-  timestamp: number;
-}
-
-// İçerik çerçevesi komponenti
-function ContentFrame({ imageData }: { imageData?: string }) {
-  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
-  const [fitMode, setFitMode] = useState<'width' | 'height'>('width');
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    // Function to determine fit mode
-    const updateFitMode = () => {
-      if (!imageSize || !containerRef.current) return;
-      
-      const container = containerRef.current;
-      const containerWidth = container.clientWidth;
-      const containerHeight = container.clientHeight;
-      
-      // Calculate ratios
-      const containerRatio = containerWidth / containerHeight;
-      const imageRatio = imageSize.width / imageSize.height;
-      
-      // If image is wider than container (relatively), fit to width
-      // If image is taller than container (relatively), fit to height
-      const newFitMode = imageRatio > containerRatio ? 'width' : 'height';
-      if (newFitMode !== fitMode) {
-        setFitMode(newFitMode);
-      }
-    };
-    
-    // Update fit mode when image size changes
-    if (imageSize) {
-      updateFitMode();
-    }
-    
-    // Also update on window resize
-    window.addEventListener('resize', updateFitMode);
-    return () => {
-      window.removeEventListener('resize', updateFitMode);
-    };
-  }, [imageSize, fitMode]);
-  
-  if (imageData) {
-    return (
-      <div 
-        ref={containerRef}
-        className="w-full h-full flex items-center justify-center bg-black border-t border-r border-b"
-      >
-        {/* Image container with padding to ensure black borders */}
-        <div className="p-6 md:p-8 flex items-center justify-center w-full h-full">
-          {/* Image dimensions indicator */}
-          {imageSize && (
-            <div style={{
-              position: 'absolute',
-              top: '12px',
-              right: '12px',
-              backgroundColor: 'rgba(0,0,0,0.5)',
-              color: 'white',
-              padding: '4px 8px',
-              fontSize: '12px',
-              borderRadius: '4px',
-              zIndex: 10
-            }}>
-              {imageSize.width} × {imageSize.height} px
-            </div>
-          )}
-          
-          {/* Image centered with max dimensions to ensure black borders */}
-          <img 
-            src={`data:image/jpeg;base64,${imageData}`} 
-            alt="Device image"
-            className={`max-w-[95%] max-h-[95%] ${fitMode === 'width' ? 'w-full h-auto' : 'h-full w-auto'}`}
-            onLoad={(e) => {
-              const img = e.target as HTMLImageElement;
-              setImageSize({
-                width: img.naturalWidth,
-                height: img.naturalHeight
-              });
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
-  
-  // Empty state - full black background
-  return (
-    <div 
-      ref={containerRef}
-      className="w-full h-full flex items-center justify-center bg-black border-t border-r border-b"
-    >
-      <div style={{ textAlign: 'center' }} className="text-white dark:text-gray-300">
-        <ImageIcon style={{ width: '40px', height: '40px', opacity: 0.3, margin: '0 auto 12px' }} />
-        <p style={{ fontSize: '14px' }}>Image will appear here</p>
-      </div>
-    </div>
-  );
-}
-
-// Cihaz komut paneli bileşeni
-function DeviceCommandPanel({ device, isConnected }: { device: { key: string; label: string }, isConnected: boolean }) {
-  const { sendToDevice } = useSignalR();
-  const [commands, setCommands] = useState<string[]>([]);
-  const [commandStatus, setCommandStatus] = useState<Map<string, DeviceCommand>>(new Map());
-  const [localIsConnected, setLocalIsConnected] = useState(isConnected);
-  const [isLoading, setIsLoading] = useState(true);
-  const [imageData, setImageData] = useState<string | undefined>(undefined);
-  
-  // isConnected prop'u değiştiğinde, lokal state'i güncelle
-  useEffect(() => {
-    setLocalIsConnected(isConnected);
-    console.log(`DeviceCommandPanel: isConnected prop changed to ${isConnected} for device ${device.key}`);
-  }, [isConnected, device.key]);
-  
-  // Cihaz bağlandığında payload'dan commands bilgisini al ve kaydet
-  useEffect(() => {
-    console.log(`Setting up command listener for device ${device.key}, isConnected=${isConnected}, commands.length=${commands.length}`);
-    setIsLoading(true);
-    
-    // Bağlı cihazlar için komut bilgilerini dinle
-    const handleDeviceInfo = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      console.log('DeviceCommandPanel received device-connected event:', detail);
-      
-      if (detail && detail.key === device.key) {
-        // Cihaz bağlantı durumunu güncelle
-        setLocalIsConnected(true);
-        
-        // Payload'dan komutları al ve kaydet
-        if (detail.payload && Array.isArray(detail.payload.commands)) {
-          console.log(`Setting commands for device ${device.key}:`, detail.payload.commands);
-          setCommands(detail.payload.commands);
-          
-          // Komutları local storage'a kaydet
-          try {
-            const deviceCommandsKey = `device_commands_${device.key}`;
-            localStorage.setItem(deviceCommandsKey, JSON.stringify(detail.payload.commands));
-          } catch (err) {
-            console.error('Error saving device commands to localStorage:', err);
-          }
-        } else {
-          // Eğer komut yoksa, boş dizi kullan
-          console.log(`No commands received for device ${device.key}`);
-          setCommands([]);
-        }
-        setIsLoading(false);
-      }
-    };
-    
-    // Cihaz bağlantısı kesildiğinde
-    const handleDeviceDisconnected = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail && detail.key === device.key) {
-        console.log(`Device ${device.key} disconnected, updating command panel`);
-        setLocalIsConnected(false);
-        // Komut durumlarını temizle
-        setCommandStatus(new Map());
-        setIsLoading(false);
-      }
-    };
-    
-    // Cihaz bağlantı olaylarını dinle
-    document.addEventListener('device-connected', handleDeviceInfo);
-    document.addEventListener('device-disconnected', handleDeviceDisconnected);
-    
-    // Cihaz zaten bağlıysa, localStorage'dan komutları yüklemeyi dene
-    if (isConnected && commands.length === 0) {
-      try {
-        const deviceCommandsKey = `device_commands_${device.key}`;
-        const savedCommands = localStorage.getItem(deviceCommandsKey);
-        
-        if (savedCommands) {
-          const parsedCommands = JSON.parse(savedCommands);
-          console.log(`Loaded saved commands for device ${device.key}:`, parsedCommands);
-          setCommands(parsedCommands);
-        } else {
-          console.log(`No saved commands found for device ${device.key} in localStorage`);
-        }
-        // Kısa bir gecikme ile yüklemeyi bitir (animasyonu görmek için)
-        setTimeout(() => setIsLoading(false), 300);
-      } catch (err) {
-        console.error('Error loading device commands from localStorage:', err);
-        setIsLoading(false);
-      }
-    } else {
-      // Eğer zaten komut yüklenmişse veya cihaz bağlı değilse, yükleme durumunu kapat
-      if (commands.length > 0 || !isConnected) {
-        setIsLoading(false);
-      }
-    }
-    
-    // Temizleme
-    return () => {
-      document.removeEventListener('device-connected', handleDeviceInfo);
-      document.removeEventListener('device-disconnected', handleDeviceDisconnected);
-    };
-  }, [device.key, isConnected, commands.length]);
-  
-  // Komut yanıtlarını dinle
-  useEffect(() => {
-    // Bir global event handler oluştur ve cihaz cevaplarını dinle
-    const handleResponse = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail && detail.key === device.key && detail.originalName) {
-        const commandName = detail.originalName;
-        const status = detail.payload?.status || 'failed';
-        
-        console.log(`Device ${device.key} command ${commandName} status update:`, status, detail.payload);
-        
-        // Mevcut komut durumlarını güncelle
-        setCommandStatus(prev => {
-          const newMap = new Map(prev);
-          const existingCommand = newMap.get(commandName);
-          
-          if (existingCommand) {
-            console.log(`Updating command status: ${commandName} from ${existingCommand.status} to ${status}`);
-            newMap.set(commandName, {
-              ...existingCommand,
-              status: status as CommandStatus
-            });
-          } else {
-            console.log(`Adding new command with status: ${commandName} - ${status}`);
-            newMap.set(commandName, {
-              name: commandName,
-              status: status as CommandStatus,
-              timestamp: Date.now()
-            });
-          }
-          
-          return newMap;
-        });
-        
-        // If command is completed or failed, remove it after a delay
-        if (['completed', 'failed', 'timeout', 'no-response'].includes(status)) {
-          setTimeout(() => {
-            setCommandStatus(prev => {
-              const newMap = new Map(prev);
-              // Only remove if status is still completed, failed, timeout, or no-response
-              const current = newMap.get(commandName);
-              if (current && ['completed', 'failed', 'timeout', 'no-response'].includes(current.status)) {
-                console.log(`Removing completed/failed command: ${commandName}`);
-                newMap.delete(commandName);
-              }
-              return newMap;
-            });
-          }, 2000);
-        }
-      }
-    };
-    
-    // Olayı dinle
-    document.addEventListener('device-response', handleResponse);
-    
-    return () => {
-      document.removeEventListener('device-response', handleResponse);
-    };
-  }, [device.key]);
-  
-  // Komut gönder
-  const executeCommand = useCallback(async (commandName: string) => {
-    // Zaten işlem yapılan bir komut ise çalıştırma
-    const currentCommand = commandStatus.get(commandName);
-    if (currentCommand && ['sending', 'accepted', 'running'].includes(currentCommand.status)) {
-      return;
-    }
-    
-    // Create a timestamp for this command execution
-    const executionTimestamp = Date.now();
-    
-    // Komut durumunu 'sending' olarak güncelle
-    setCommandStatus(prev => {
-      const newMap = new Map(prev);
-      newMap.set(commandName, {
-        name: commandName,
-        status: 'sending',
-        timestamp: executionTimestamp
-      });
-      return newMap;
-    });
-    
-    try {
-      // Komutu cihaza gönder
-      await sendToDevice(device.key, commandName, null);
-      
-      // 5 saniye sonra hala bir cevap gelmediyse, no-response
-      const noResponseTimeout = setTimeout(() => {
-        setCommandStatus(prev => {
-          const newMap = new Map(prev);
-          const command = newMap.get(commandName);
-          
-          // Only update if this is the same command execution (check timestamp)
-          // and it's still in 'sending' state (no status update received)
-          if (command && command.timestamp === executionTimestamp && command.status === 'sending') {
-            console.log(`No response received for command ${commandName} after 5 seconds`);
-            newMap.set(commandName, {
-              ...command,
-              status: 'no-response'
-            });
-            
-            // Remove no-response status after 2 seconds to reset the button
-            setTimeout(() => {
-              setCommandStatus(prev => {
-                const newMap = new Map(prev);
-                const current = newMap.get(commandName);
-                if (current && current.timestamp === executionTimestamp && current.status === 'no-response') {
-                  newMap.delete(commandName);
-                }
-                return newMap;
-              });
-            }, 2000);
-          }
-          
-          return newMap;
-        });
-      }, 5000); // 5 seconds timeout for no-response
-      
-      // 10 saniye sonra hala bir cevap gelmediyse, timeout
-      // This still applies for cases when we got an initial response but then no further updates
-      setTimeout(() => {
-        setCommandStatus(prev => {
-          const newMap = new Map(prev);
-          const command = newMap.get(commandName);
-          
-          // Only update status if the command is still in sending state and it's the same execution
-          if (command && command.timestamp === executionTimestamp && command.status === 'sending') {
-            newMap.set(commandName, {
-              ...command,
-              status: 'timeout'
-            });
-            
-            // Reset the button after 2 seconds
-            setTimeout(() => {
-              setCommandStatus(prev => {
-                const newMap = new Map(prev);
-                const current = newMap.get(commandName);
-                if (current && current.timestamp === executionTimestamp && current.status === 'timeout') {
-                  newMap.delete(commandName);
-                }
-                return newMap;
-              });
-            }, 2000);
-          }
-          
-          return newMap;
-        });
-      }, 10000);
-      
-    } catch (error) {
-      console.error(`Error sending command ${commandName} to device:`, error);
-      
-      // Hata durumunda durumu 'failed' olarak işaretle
-      setCommandStatus(prev => {
-        const newMap = new Map(prev);
-        newMap.set(commandName, {
-          name: commandName,
-          status: 'failed',
-          timestamp: executionTimestamp
-        });
-        return newMap;
-      });
-      
-      // Reset the button after 2 seconds
-      setTimeout(() => {
-        setCommandStatus(prev => {
-          const newMap = new Map(prev);
-          const current = newMap.get(commandName);
-          if (current && current.timestamp === executionTimestamp && current.status === 'failed') {
-            newMap.delete(commandName);
-          }
-          return newMap;
-        });
-      }, 2000);
-    }
-  }, [device.key, sendToDevice, commandStatus]);
-  
-  // Komut durumuna göre ikon ve renk belirle
-  const getCommandStatusInfo = (commandName: string) => {
-    const command = commandStatus.get(commandName);
-    
-    if (!command) {
-      return {
-        icon: <ChevronRight className="h-4 w-4" />,
-        color: 'text-zinc-400',
-        label: ''
-      };
-    }
-    
-    switch (command.status) {
-      case 'sending':
-        return {
-          icon: <SendHorizontal className="h-4 w-4 animate-pulse" />,
-          color: 'text-yellow-500',
-          label: 'Sending'
-        };
-      case 'accepted':
-        return {
-          icon: <FileCheck className="h-4 w-4" />,
-          color: 'text-blue-500',
-          label: 'Accepted'
-        };
-      case 'running':
-        return {
-          icon: <Loader2 className="h-4 w-4 animate-spin" />,
-          color: 'text-green-500',
-          label: 'Running'
-        };
-      case 'completed':
-        return {
-          icon: <CheckCircle className="h-4 w-4" />,
-          color: 'text-emerald-500',
-          label: 'Completed'
-        };
-      case 'failed':
-        return {
-          icon: <ShieldAlert className="h-4 w-4" />,
-          color: 'text-red-500',
-          label: 'Failed'
-        };
-      case 'timeout':
-        return {
-          icon: <Hourglass className="h-4 w-4" />,
-          color: 'text-orange-500',
-          label: 'Timeout'
-        };
-      case 'no-response':
-        return {
-          icon: <RefreshCw className="h-4 w-4" />,
-          color: 'text-purple-500',
-          label: 'No Response'
-        };
-      default:
-        return {
-          icon: <ChevronRight className="h-4 w-4" />,
-          color: 'text-zinc-400',
-          label: ''
-        };
-    }
-  };
-  
-  // Cihaz bağlandığında image data'yı al ve kaydet
-  useEffect(() => {
-    const handleDeviceMessage = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail && detail.key === device.key) {
-        console.log('Received message from device:', detail);
-        
-        // Eğer mesajda base64 encoded image varsa, göster
-        if (detail.payload && detail.payload.image) {
-          console.log('Received image data from device');
-          setImageData(detail.payload.image);
-          
-          // Image'ı session storage'a kaydet (sayfa yenilendiğinde kaybolur)
-          try {
-            const imageKey = `device_image_${device.key}`;
-            sessionStorage.setItem(imageKey, detail.payload.image);
-          } catch (err) {
-            console.error('Error saving image data to sessionStorage:', err);
-          }
-        }
-      }
-    };
-    
-    // ReceiveFromDevice olaylarını dinle
-    document.addEventListener('signalr-message', handleDeviceMessage);
-    
-    // İlk yüklemede session storage'dan image'ı yükle
-    if (isConnected) {
-      try {
-        const imageKey = `device_image_${device.key}`;
-        const savedImage = sessionStorage.getItem(imageKey);
-        
-        if (savedImage) {
-          console.log(`Loaded saved image for device ${device.key}`);
-          setImageData(savedImage);
-        }
-      } catch (err) {
-        console.error('Error loading image from sessionStorage:', err);
-      }
-    }
-    
-    return () => {
-      document.removeEventListener('signalr-message', handleDeviceMessage);
-    };
-  }, [device.key, isConnected]);
-  
-  // Cihaz bağlı değilse komutları gösterme
-  if (!localIsConnected) {
-    console.log(`DeviceCommandPanel: Device ${device.key} is not connected, showing disconnected message`);
-    return (
-      <div className="h-full flex items-center justify-center">
-        <p className="text-sm text-muted-foreground text-center">
-          Device is disconnected. Connect the device to view available commands.
-        </p>
-      </div>
-    );
-  }
-  
-  console.log(`DeviceCommandPanel: Rendering commands for device ${device.key}, commands count: ${commands.length}, isLoading: ${isLoading}`);
-  console.log('Command list:', commands);
-  
-  return (
-    <div className="h-full flex flex-col max-h-full">
-      {/* Command panel content - removed header */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {isLoading ? (
-          <div className="h-full flex items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : commands.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground text-center py-4 px-3 border rounded-lg">
-              No commands available for this device.
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col h-full">
-            {/* Command buttons - at the top with more spacing */}
-            <div className="flex flex-wrap gap-4 px-4 py-4">
-              {commands.map(cmd => {
-                const { icon, color, label } = getCommandStatusInfo(cmd);
-                const isDisabled = (() => {
-                  const command = commandStatus.get(cmd);
-                  // Only disable the button if the command is actively being processed
-                  return command && ['sending', 'accepted', 'running'].includes(command.status);
-                })();
-                
-                return (
-                  <Button
-                    key={cmd}
-                    variant="outline"
-                    size="sm"
-                    className={`flex items-start justify-start gap-2 h-14 py-2 px-4 min-w-[130px] shadow-sm hover:shadow`}
-                    onClick={() => executeCommand(cmd)}
-                    disabled={isDisabled}
-                  >
-                    <div className={`mt-0.5 ${color}`}>
-                      {icon}
-                    </div>
-                    <div className="flex flex-col items-start">
-                      <span className="font-medium text-sm truncate">{cmd}</span>
-                      <span className={`text-xs mt-1 ${color} ${commandStatus.has(cmd) ? 'opacity-80' : 'opacity-40'}`}>
-                        {commandStatus.has(cmd) ? label : <MoreHorizontal className="h-3 w-3" />}
-                      </span>
-                    </div>
-                    <span className="sr-only">{label}</span>
-                  </Button>
-                );
-              })}
-            </div>
-            
-            {/* Content frame - using flex instead of absolute positioning */}
-            <div className="flex-1 relative">
-              <ContentFrame imageData={imageData} />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+import { DeviceCommandPanel } from './DeviceCommandPanel';
+import { useDeviceEvents } from '../hooks/useDeviceEvents';
+import type { Device } from '../types';
 
 export function DeviceList() {
-  const { devices, sendToDevice } = useSignalR();
-  const [savedKeys, setSavedKeys] = useState<{ key: string; label: string }[]>([]);
-  const [deviceToRemove, setDeviceToRemove] = useState<{ key: string; label: string } | null>(null);
+  const { devices } = useSignalR();
+  const [savedKeys, setSavedKeys] = useState<Device[]>([]);
+  const [deviceToRemove, setDeviceToRemove] = useState<Device | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newDeviceKey, setNewDeviceKey] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedDevice, setSelectedDevice] = useState<{ key: string; label: string } | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const dialogCloseRef = useRef<HTMLButtonElement>(null);
   const addDialogCloseRef = useRef<HTMLButtonElement>(null);
   
-  // Cihaz bağlantı durumunu doğrudan dinle
-  useEffect(() => {
-    // devices listesi değiştiğinde, ve seçili bir cihaz varsa
-    // o cihazın bağlantı durumunu kontrol et ve component'i zorla güncelle
-    if (selectedDevice) {
-      // Log connection state updates
-      const device = devices.find(d => d.key === selectedDevice.key);
-      console.log(`Device connection state updated for ${selectedDevice.key}:`, 
-        device ? `Connected: ${device.isConnected}` : 'Not found in devices list');
+  // Initialize device events handling
+  const { triggerDeviceConnected } = useDeviceEvents();
+  
+  // Basit bir device isim güncelleme fonksiyonu
+  const updateDeviceNames = () => {
+    let hasUpdates = false;
+    const updatedKeys = [...savedKeys];
+    
+    // Bağlı cihazları kontrol et ve isimlerini güncelle
+    devices.forEach(device => {
+      if (device.isConnected && device.name) {
+        const index = updatedKeys.findIndex(k => k.key === device.key);
+        if (index !== -1 && updatedKeys[index].label !== device.name) {
+          console.log(`Updating device name for ${device.key} from "${updatedKeys[index].label}" to "${device.name}"`);
+          updatedKeys[index].label = device.name;
+          hasUpdates = true;
+        }
+      }
+    });
+    
+    // Değişiklik varsa state'i güncelle
+    if (hasUpdates) {
+      setSavedKeys(updatedKeys);
+      localStorage.setItem('deviceKeys', JSON.stringify(updatedKeys));
       
-      // Force update only if device connected state changed
-      if (device && device.isConnected) {
-        // If device name is available and different from current, update it
-        if (device.name && device.name !== selectedDevice.label) {
+      // Seçili cihazı da güncelle
+      if (selectedDevice) {
+        const device = devices.find(d => d.key === selectedDevice.key);
+        if (device && device.isConnected && device.name && selectedDevice.label !== device.name) {
           setSelectedDevice(prev => {
             if (!prev) return null;
-            return { ...prev, label: device.name || prev.label };
+            return { ...prev, label: device.name! };
           });
         }
       }
     }
-  }, [devices]); // Remove selectedDevice from dependencies to prevent loops
+  };
   
-  // Cihaz yanıtlarını global olaylar aracılığıyla dinle
+  // SignalR olaylarını dinle
   useEffect(() => {
-    // SignalR'dan cihaz cevaplarını dinle ve global olaylar olarak yay
-    const handleDeviceResponse = (key: string, originalName: string, payload: any) => {
-      // Global olay olarak yay
-      const event = new CustomEvent('device-response', {
-        detail: { key, originalName, payload }
-      });
-      document.dispatchEvent(event);
-    };
-    
-    // Bağlanan cihazların komutlarını işle
-    const handleDeviceConnected = (device: any) => {
-      console.log('Received signalr-device-connected event:', device);
-      
-      if (device?.key) {
-        // Check if payload contains commands - get from the payload property if it exists
-        let commands = [];
+    // Cihaz bağlandığında isim güncellemelerini kontrol et
+    const handleDeviceConnected = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && detail.key && detail.name) {
+        const deviceKey = detail.key;
+        const deviceName = detail.name;
         
-        // Debug logs to see what's coming in
-        console.log('Device payload:', device.payload);
-        
-        if (device.payload && Array.isArray(device.payload.commands)) {
-          // Get commands directly from payload.commands
-          commands = device.payload.commands;
-          console.log(`Found commands in device.payload.commands:`, commands);
-        } else if (device.commands && Array.isArray(device.commands)) {
-          // Fallback to device.commands if available
-          commands = device.commands;
-          console.log(`Found commands in device.commands:`, commands);
-        }
-        
-        // Global olay olarak yay (payload bilgisini ekle)
-        const event = new CustomEvent('device-connected', {
-          detail: { 
-            key: device.key, 
-            name: device.name || device.key,
-            isConnected: device.isConnected !== undefined ? device.isConnected : true,
-            payload: {
-              commands: commands
+        // Küçük bir gecikme ile güncelleme işlemini yap
+        setTimeout(() => {
+          setSavedKeys(prev => {
+            const updated = [...prev];
+            const index = updated.findIndex(k => k.key === deviceKey);
+            
+            if (index !== -1 && updated[index].label !== deviceName) {
+              console.log(`Event: Updating device name for ${deviceKey} from "${updated[index].label}" to "${deviceName}"`);
+              updated[index].label = deviceName;
+              
+              // LocalStorage'a kaydet
+              localStorage.setItem('deviceKeys', JSON.stringify(updated));
+              
+              return updated;
             }
+            return prev;
+          });
+          
+          // Seçili cihazı da güncelle - ayrı bir çağrı olarak yap
+          if (selectedDevice && selectedDevice.key === deviceKey) {
+            setSelectedDevice(old => {
+              if (!old) return null;
+              return { ...old, label: deviceName };
+            });
           }
+        }, 100); // Küçük bir gecikme ile React state güncellemelerinin çakışmasını önle
+      }
+    };
+
+    // Handle manual device updates explicitly
+    const handleManualDeviceUpdate = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && detail.key && detail.name) {
+        const deviceKey = detail.key;
+        const deviceName = detail.name;
+        
+        setSavedKeys(prev => {
+          const updated = [...prev];
+          const index = updated.findIndex(k => k.key === deviceKey);
+          
+          if (index !== -1 && updated[index].label !== deviceName) {
+            console.log(`Manual update: Updating device name for ${deviceKey} from "${updated[index].label}" to "${deviceName}"`);
+            updated[index].label = deviceName;
+            
+            // LocalStorage'a kaydet
+            localStorage.setItem('deviceKeys', JSON.stringify(updated));
+            
+            return updated;
+          }
+          return prev;
         });
-        console.log('Dispatching device-connected event with commands:', commands);
-        document.dispatchEvent(event);
+        
+        // Seçili cihazı da güncelle
+        if (selectedDevice && selectedDevice.key === deviceKey) {
+          setSelectedDevice(old => {
+            if (!old) return null;
+            return { ...old, label: deviceName };
+          });
+        }
       }
     };
     
     // Event listener'ları ekle
-    const addListeners = () => {
-      if (typeof window !== 'undefined') {
-        document.addEventListener('signalr-response', (event: Event) => {
-          const detail = (event as CustomEvent).detail;
-          if (detail) {
-            // signalr-response event'ini device-response'a dönüştür
-            handleDeviceResponse(detail.key, detail.name, detail.payload);
-          }
+    document.addEventListener('signalr-device-connected', handleDeviceConnected);
+    document.addEventListener('device-connected', handleDeviceConnected);
+    document.addEventListener('manual-device-update', handleManualDeviceUpdate);
+    
+    // Debug için doğrudan çağır - bağlı cihazların hepsinin isimlerini güncelle
+    devices.forEach(device => {
+      if (device.isConnected && device.name) {
+        const fakeEvent = new CustomEvent('manual-device-update', { 
+          detail: { key: device.key, name: device.name } 
         });
-        
-        // Handle both command responses from test panel and regular responses
-        document.addEventListener('signalr-message', (event: Event) => {
-          const detail = (event as CustomEvent).detail;
-          if (detail && detail.payload && detail.payload._responseType === 'deviceResponse') {
-            // This is a device response via the test panel
-            const commandName = detail.name; // The original command name is used as the message name
-            const payload = detail.payload;
-            handleDeviceResponse(detail.key, commandName, payload);
-          }
-        });
-        
-        document.addEventListener('signalr-device-connected', (event: Event) => {
-          const detail = (event as CustomEvent).detail;
-          if (detail) {
-            handleDeviceConnected(detail);
-          }
-        });
-        
-        // Device disconnected olaylarını dinle
-        document.addEventListener('signalr-device-disconnected', (event: Event) => {
-          const detail = (event as CustomEvent).detail;
-          if (detail) {
-            console.log('Received signalr-device-disconnected event:', detail);
-            
-            // Global olaya çevir
-            if (detail.key) {
-              const event = new CustomEvent('device-disconnected', {
-                detail: { 
-                  key: detail.key,
-                  name: detail.name || detail.key
-                }
-              });
-              document.dispatchEvent(event);
-            }
-          }
-        });
-        
-        // Doğrudan device-connected olaylarını da dinle
-        document.addEventListener('device-connected', (event: Event) => {
-          const detail = (event as CustomEvent).detail;
-          if (detail && selectedDevice && selectedDevice.key === detail.key) {
-            console.log(`Direct device-connected event for selected device ${detail.key}`);
-            // Force a refresh of the command panel by updating selectedDevice reference
-            setTimeout(() => {
-              setSelectedDevice(prev => {
-                if (!prev || prev.key !== detail.key) return prev;
-                const newLabel = detail.name || prev.label;
-                // Only update if label changed to avoid infinite loops
-                if (newLabel !== prev.label) {
-                  return { ...prev, label: newLabel };
-                }
-                return prev;
-              });
-            }, 100); // Small delay to ensure state updates properly
-          }
-        });
+        handleManualDeviceUpdate(fakeEvent);
       }
-    };
+    });
     
-    addListeners();
-    
-    // Cleanup - Önemli: Gerçek event listener fonksiyonlarını temizle
     return () => {
-      document.removeEventListener('signalr-response', (event: Event) => {
-        const detail = (event as CustomEvent).detail;
-        if (detail) {
-          handleDeviceResponse(detail.key, detail.name, detail.payload);
-        }
-      });
-      document.removeEventListener('signalr-message', (event: Event) => {
-        const detail = (event as CustomEvent).detail;
-        if (detail && detail.payload && detail.payload._responseType === 'deviceResponse') {
-          const commandName = detail.name;
-          const payload = detail.payload;
-          handleDeviceResponse(detail.key, commandName, payload);
-        }
-      });
-      document.removeEventListener('signalr-device-connected', (event: Event) => {
-        const detail = (event as CustomEvent).detail;
-        if (detail) {
-          handleDeviceConnected(detail);
-        }
-      });
-      document.removeEventListener('device-connected', (event: Event) => {
-        const detail = (event as CustomEvent).detail;
-        if (detail && selectedDevice && selectedDevice.key === detail.key) {
-          console.log(`Direct device-connected event for selected device ${detail.key}`);
-        }
-      });
-      document.removeEventListener('signalr-device-disconnected', (event: Event) => {
-        const detail = (event as CustomEvent).detail;
-        if (detail) {
-          console.log('Received signalr-device-disconnected event:', detail);
-        }
-      });
+      document.removeEventListener('signalr-device-connected', handleDeviceConnected);
+      document.removeEventListener('device-connected', handleDeviceConnected);
+      document.removeEventListener('manual-device-update', handleManualDeviceUpdate);
     };
-  }, []); // Boş dependency array, sadece bir kez çalıştır
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
+  // Cihaz listesi her değiştiğinde isimleri güncelle (daha güvenli bir yaklaşım)
+  useEffect(() => {
+    if (devices.length > 0 && savedKeys.length > 0) {
+      // İsim güncellemelerini hemen yap
+      updateDeviceNames();
+      
+      // Bağlı cihazlar için manual-device-update event'i tetikle
+      devices.forEach(device => {
+        if (device.isConnected && device.name) {
+          // İsim değişikliğini zorlayarak güncellemek için event tetikle
+          const updateEvent = new CustomEvent('manual-device-update', { 
+            detail: { key: device.key, name: device.name } 
+          });
+          document.dispatchEvent(updateEvent);
+        }
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices]);
   
   // Load saved keys from localStorage
   useEffect(() => {
@@ -805,6 +208,25 @@ export function DeviceList() {
     // Use the real device name if connected, otherwise use saved label
     const displayName = (device?.isConnected && device?.name) ? device.name : saved.label;
     
+    // If the real device name is available but different from the saved label,
+    // update the saved label in the next render cycle to ensure consistency
+    if (device?.isConnected && device?.name && saved.label !== device.name) {
+      // Schedule an update with a slight delay to avoid render conflicts
+      setTimeout(() => {
+        setSavedKeys(prev => {
+          const updatedKeys = [...prev];
+          const index = updatedKeys.findIndex(k => k.key === saved.key);
+          if (index !== -1 && updatedKeys[index].label !== device.name) {
+            console.log(`Auto-updating device name from ${updatedKeys[index].label} to ${device.name}`);
+            updatedKeys[index].label = device.name;
+            localStorage.setItem('deviceKeys', JSON.stringify(updatedKeys));
+            return updatedKeys;
+          }
+          return prev;
+        });
+      }, 0);
+    }
+    
     return {
       ...saved,
       displayName,
@@ -812,43 +234,32 @@ export function DeviceList() {
     };
   });
   
-  // Update saved device names when connected devices' names are received
-  useEffect(() => {
-    // Only process if we have devices
-    if (devices.length === 0) return;
-    
-    let needsUpdate = false;
-    const updatedKeys = [...savedKeys];
-    
-    devices.forEach(device => {
-      // Only process connected devices with names
-      if (device.isConnected && device.name) {
-        // Find this device in our saved keys
-        const savedDeviceIndex = updatedKeys.findIndex(s => s.key === device.key);
-        
-        if (savedDeviceIndex !== -1) {
-          // If the label is different from the device name, update it
-          if (updatedKeys[savedDeviceIndex].label !== device.name) {
-            updatedKeys[savedDeviceIndex].label = device.name;
-            needsUpdate = true;
-          }
-        }
+  // Handle device selection
+  const handleDeviceSelect = (device: Device) => {
+    if (selectedDevice?.key === device.key) {
+      setSelectedDevice(null);
+    } else {
+      setSelectedDevice(device);
+      
+      // Check connection status and trigger events if necessary
+      const currentDevice = devices.find(d => d.key === device.key);
+      
+      if (currentDevice?.isConnected) {
+        // If device is connected, trigger a connected event to load commands
+        triggerDeviceConnected({
+          key: device.key,
+          name: device.label
+        });
       }
-    });
-    
-    // If we made any updates, save them to localStorage
-    if (needsUpdate) {
-      setSavedKeys(updatedKeys);
-      localStorage.setItem('deviceKeys', JSON.stringify(updatedKeys));
     }
-  }, [devices, savedKeys]);
+  };
   
   // Open confirmation dialog before removing a device
-  const openRemoveConfirmation = (device: { key: string; label: string }) => {
+  const openRemoveConfirmation = (device: Device) => {
     setDeviceToRemove(device);
   };
   
-  // Function to handle removing a device
+  // Handle removing a device
   const handleRemoveDevice = () => {
     if (!deviceToRemove) return;
     
@@ -869,7 +280,7 @@ export function DeviceList() {
     setDeviceToRemove(null);
   };
   
-  // Function to handle adding a device
+  // Handle adding a device
   const handleAddDevice = async () => {
     if (!newDeviceKey.trim()) return;
     
@@ -886,7 +297,7 @@ export function DeviceList() {
       // Add the new key with the key as initial label
       const keyToAdd = {
         key: newDeviceKey.trim(),
-        label: newDeviceKey.trim(), // Use key as initial label, will be replaced by real name when connected
+        label: newDeviceKey.trim(), // Use key as initial label
       };
       
       const updatedKeys = [...savedKeys, keyToAdd];
@@ -904,62 +315,12 @@ export function DeviceList() {
       // Dispatch storage event to notify other components
       window.dispatchEvent(new Event('storage'));
       
+      // Update local state
+      setSavedKeys(updatedKeys);
+      
     } catch (error) {
       console.error('Error adding device:', error);
       setIsSubmitting(false);
-    }
-  };
-
-  // Cihaz seçme işlevi
-  const handleDeviceSelect = (device: { key: string; label: string }) => {
-    if (selectedDevice?.key === device.key) {
-      console.log(`Unselecting device ${device.key}`);
-      setSelectedDevice(null); // Zaten seçiliyse, seçimi kaldır
-    } else {
-      console.log(`Selecting device ${device.key}`);
-      setSelectedDevice(device); // Değilse, seçimi değiştir
-      
-      // Seçilen cihazın bağlantı durumunu kontrol et ve logla
-      const currentDevice = devices.find(d => d.key === device.key);
-      console.log(`Selected device ${device.key}, connection status:`, 
-        currentDevice ? `Connected: ${currentDevice.isConnected}` : 'unknown');
-      
-      // Force trigger a device-connected event if the device is already connected
-      // This helps ensure commands are loaded for the selected device
-      if (currentDevice?.isConnected) {
-        console.log('Device is connected, triggering device-connected event to load commands');
-        
-        // Try to get commands from localStorage
-        try {
-          const deviceCommandsKey = `device_commands_${device.key}`;
-          const savedCommands = localStorage.getItem(deviceCommandsKey);
-          let commands = [];
-          
-          if (savedCommands) {
-            commands = JSON.parse(savedCommands);
-            console.log(`Found saved commands for device ${device.key}:`, commands);
-          } else {
-            console.log(`No saved commands found for device ${device.key}`);
-          }
-          
-          // Create a custom event to trigger the commands panel
-          const customEvent = new CustomEvent('device-connected', {
-            detail: {
-              key: device.key,
-              name: device.label,
-              isConnected: true,
-              payload: {
-                commands: commands
-              }
-            }
-          });
-          
-          console.log('Dispatching manual device-connected event for selected device');
-          document.dispatchEvent(customEvent);
-        } catch (err) {
-          console.error('Error manually triggering device commands:', err);
-        }
-      }
     }
   };
   
@@ -975,12 +336,15 @@ export function DeviceList() {
     
     const isConnected = enhancedDevices.find(d => d.key === selectedDevice.key)?.isConnected || false;
     
+    // Render main content with a fixed size container to prevent layout shifts
     return (
+      <div className="h-full w-full overflow-hidden">
       <DeviceCommandPanel 
         key={`${selectedDevice.key}-${isConnected ? 'connected' : 'disconnected'}`}
         device={selectedDevice} 
         isConnected={isConnected} 
       />
+      </div>
     );
   };
   
@@ -988,7 +352,7 @@ export function DeviceList() {
     <>
       {/* Device list - vertical layout for sidebar */}
       <div className="space-y-3 w-full">
-        {/* Devices as vertical list - more compact */}
+        {/* Devices as vertical list */}
         <div className="space-y-4">
           {enhancedDevices.map((device) => (
             <div 
@@ -1020,7 +384,7 @@ export function DeviceList() {
                 size="sm"
                 className="h-6 w-6 p-0 rounded-full"
                 onClick={(e) => {
-                  e.stopPropagation(); // Tıklama olayının üst elemana geçmesini önle
+                  e.stopPropagation();
                   openRemoveConfirmation(device);
                 }}
                 title="Remove device"
@@ -1032,7 +396,7 @@ export function DeviceList() {
           ))}
         </div>
         
-        {/* Add Device Button - compact */}
+        {/* Add Device Button */}
         <Button
           variant="outline"
           size="sm"
@@ -1043,8 +407,6 @@ export function DeviceList() {
           Add Device
         </Button>
       </div>
-
-      {/* Dialogs are placed outside the sidebar but still within the DeviceList component */}
       
       {/* Remove Device Confirmation Dialog */}
       <Dialog open={!!deviceToRemove} onOpenChange={(open) => !open && setDeviceToRemove(null)}>
@@ -1114,7 +476,7 @@ export function DeviceList() {
       {/* Inject the main content via portal into the main-content div */}
       {typeof document !== 'undefined' && document.getElementById('main-content') && 
         createPortal(
-          <div className="h-full">
+          <div className="h-full w-full overflow-hidden fixed-size-container">
             {renderMainContent()}
           </div>,
           document.getElementById('main-content')!
