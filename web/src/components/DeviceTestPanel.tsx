@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import {
   Monitor, Network, MessageSquare, Send, SendHorizontal, CheckCircle, XCircle, AlertCircle, Clock,
-  Loader2, RefreshCw, FileCheck, Hourglass, ShieldAlert, ChevronRight
+  Loader2, RefreshCw, FileCheck, Hourglass, ShieldAlert, ChevronRight, Camera, Upload, Image as ImageIcon
 } from 'lucide-react';
 import { deviceService } from '../lib/deviceService';
 
@@ -26,6 +26,9 @@ export function DeviceTestPanel() {
   const [messageToSend, setMessageToSend] = useState('');
   const [savedDevices, setSavedDevices] = useState<Array<{key: string, label: string}>>([]);
   const [pendingCommands, setPendingCommands] = useState<Map<string, CommandStatus>>(new Map());
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [isSendingImage, setIsSendingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const hubUrlRef = useRef<string>('');
   
   // Load saved devices and hub URL when component mounts
@@ -393,6 +396,112 @@ export function DeviceTestPanel() {
     }
   };
   
+  // Function to handle file selection (for image upload)
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Only accept image files
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      if (result) {
+        // Extract the base64 data (remove the data URL prefix)
+        const base64Data = result.split(',')[1];
+        
+        // Use the image as is, without resizing
+        setCapturedImage(base64Data);
+      }
+    };
+    reader.onerror = () => {
+      setError('Failed to read the image file');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Function to capture screen (if supported by browser)
+  const captureScreen = async () => {
+    try {
+      // Check if the browser supports screen capture
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        throw new Error('Screen capture not supported');
+      }
+
+      // Request screen capture
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      
+      // Create video element to capture the stream
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play();
+        
+        // Create canvas to draw the image at original size
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        // Draw the video frame to the canvas at original size
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          // Draw the video at its original dimensions
+          ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+          
+          // Get base64 data from canvas
+          const imageData = canvas.toDataURL('image/jpeg', 0.9);
+          const base64Data = imageData.split(',')[1];
+          
+          // Use the image as is
+          setCapturedImage(base64Data);
+          
+          // Stop all tracks
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
+    } catch (err) {
+      console.error('Error capturing screen:', err);
+      setError('Failed to capture screen. Try uploading an image instead.');
+    }
+  };
+
+  // Function to send image to users
+  const sendImageToUsers = async () => {
+    if (!capturedImage || !isConnected) return;
+    
+    try {
+      setIsSendingImage(true);
+      
+      await deviceService.sendToUsers('device-update', {
+        image: capturedImage,
+        timestamp: new Date().toISOString()
+      });
+      
+      setIsSendingImage(false);
+      // Leave the image preview visible after sending
+    } catch (err) {
+      setIsSendingImage(false);
+      console.error('Error sending image:', err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to send image');
+      }
+    }
+  };
+
+  // Function to clear captured image
+  const clearCapturedImage = () => {
+    setCapturedImage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+  
   return (
     <div className="max-w-md mx-auto p-6 bg-card border rounded-lg shadow-sm">
       <div className="space-y-4">
@@ -503,6 +612,78 @@ export function DeviceTestPanel() {
                 </div>
               </div>
             )}
+            
+            {/* Screen Capture Section */}
+            <div className="border-t pt-4">
+              <div className="flex items-center mb-2">
+                <Camera className="h-4 w-4 mr-2 text-primary" />
+                <h3 className="text-sm font-medium">Screen Capture</h3>
+              </div>
+              
+              {capturedImage ? (
+                <div className="space-y-3">
+                  <div className="border rounded-md overflow-hidden">
+                    <img 
+                      src={`data:image/jpeg;base64,${capturedImage}`} 
+                      alt="Captured screen" 
+                      className="w-full h-auto"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={clearCapturedImage}
+                      className="flex-1"
+                    >
+                      Clear
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      onClick={sendImageToUsers}
+                      disabled={isSendingImage}
+                      className="flex-1"
+                    >
+                      {isSendingImage ? 'Sending...' : 'Send Image'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={captureScreen}
+                      className="flex-1"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Capture Screen
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex-1"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Image
+                    </Button>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                  </div>
+                  <div className="border rounded-md p-8 flex flex-col items-center justify-center text-muted-foreground">
+                    <ImageIcon className="h-10 w-10 mb-2 opacity-20" />
+                    <p className="text-sm text-center">Capture a screen or upload an image to send to users</p>
+                  </div>
+                </div>
+              )}
+            </div>
             
             <div className="border-t pt-4">
               <div className="flex items-center mb-2">

@@ -3,9 +3,9 @@ import { DeviceHub } from "./components/DeviceHub"
 
 function App() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen overflow-hidden flex flex-col">
       <Navbar />
-      <main className="flex-1 pt-2 md:pt-4">
+      <main className="flex-1 overflow-hidden">
         <DeviceHub />
       </main>
     </div>

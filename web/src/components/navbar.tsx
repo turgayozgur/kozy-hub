@@ -6,7 +6,7 @@ import logoSvg from "../assets/images/logo.png"
 export function Navbar() {
   return (
     <nav className="border-b">
-      <div className="container flex h-16 items-center justify-between">
+      <div className="flex h-16 items-center justify-between px-4 md:px-6">
         <Link to="/" className="hover:opacity-80 transition-opacity flex items-center">
           <img src={logoSvg} alt="Kozy Connect" className="h-8" />
           <span className="sr-only">Kozy Connect</span>

@@ -9,7 +9,10 @@ builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 
 // Add SignalR services
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    options.MaximumReceiveMessageSize = 1024 * 1024 * 2; // 2 MB
+});
 
 // Add CORS
 builder.Services.AddCors(options =>

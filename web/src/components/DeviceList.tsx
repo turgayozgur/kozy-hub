@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import {
   Monitor, X, Plus, SendHorizontal, CheckCircle, XCircle, AlertCircle, Clock,
   Loader2, RefreshCw, FlaskConical, Hourglass, ShieldAlert, FileCheck, Bolt,
-  ChevronRight, MoreHorizontal
+  ChevronRight, MoreHorizontal, Image as ImageIcon
 } from 'lucide-react';
 import {
   Dialog,
@@ -14,6 +14,7 @@ import {
   DialogFooter,
   DialogClose,
 } from './ui/dialog';
+import { createPortal } from 'react-dom';
 
 // Komut durumları için tip tanımlaması
 type CommandStatus = 'idle' | 'sending' | 'accepted' | 'running' | 'completed' | 'failed' | 'timeout' | 'no-response';
@@ -25,6 +26,102 @@ interface DeviceCommand {
   timestamp: number;
 }
 
+// İçerik çerçevesi komponenti
+function ContentFrame({ imageData }: { imageData?: string }) {
+  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [fitMode, setFitMode] = useState<'width' | 'height'>('width');
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    // Function to determine fit mode
+    const updateFitMode = () => {
+      if (!imageSize || !containerRef.current) return;
+      
+      const container = containerRef.current;
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+      
+      // Calculate ratios
+      const containerRatio = containerWidth / containerHeight;
+      const imageRatio = imageSize.width / imageSize.height;
+      
+      // If image is wider than container (relatively), fit to width
+      // If image is taller than container (relatively), fit to height
+      const newFitMode = imageRatio > containerRatio ? 'width' : 'height';
+      if (newFitMode !== fitMode) {
+        setFitMode(newFitMode);
+      }
+    };
+    
+    // Update fit mode when image size changes
+    if (imageSize) {
+      updateFitMode();
+    }
+    
+    // Also update on window resize
+    window.addEventListener('resize', updateFitMode);
+    return () => {
+      window.removeEventListener('resize', updateFitMode);
+    };
+  }, [imageSize, fitMode]);
+  
+  if (imageData) {
+    return (
+      <div 
+        ref={containerRef}
+        className="w-full h-full flex items-center justify-center bg-black border-t border-r border-b"
+      >
+        {/* Image container with padding to ensure black borders */}
+        <div className="p-6 md:p-8 flex items-center justify-center w-full h-full">
+          {/* Image dimensions indicator */}
+          {imageSize && (
+            <div style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              color: 'white',
+              padding: '4px 8px',
+              fontSize: '12px',
+              borderRadius: '4px',
+              zIndex: 10
+            }}>
+              {imageSize.width} × {imageSize.height} px
+            </div>
+          )}
+          
+          {/* Image centered with max dimensions to ensure black borders */}
+          <img 
+            src={`data:image/jpeg;base64,${imageData}`} 
+            alt="Device image"
+            className={`max-w-[95%] max-h-[95%] ${fitMode === 'width' ? 'w-full h-auto' : 'h-full w-auto'}`}
+            onLoad={(e) => {
+              const img = e.target as HTMLImageElement;
+              setImageSize({
+                width: img.naturalWidth,
+                height: img.naturalHeight
+              });
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+  
+  // Empty state - full black background
+  return (
+    <div 
+      ref={containerRef}
+      className="w-full h-full flex items-center justify-center bg-black border-t border-r border-b"
+    >
+      <div style={{ textAlign: 'center' }} className="text-white dark:text-gray-300">
+        <ImageIcon style={{ width: '40px', height: '40px', opacity: 0.3, margin: '0 auto 12px' }} />
+        <p style={{ fontSize: '14px' }}>Image will appear here</p>
+      </div>
+    </div>
+  );
+}
+
 // Cihaz komut paneli bileşeni
 function DeviceCommandPanel({ device, isConnected }: { device: { key: string; label: string }, isConnected: boolean }) {
   const { sendToDevice } = useSignalR();
@@ -32,6 +129,7 @@ function DeviceCommandPanel({ device, isConnected }: { device: { key: string; la
   const [commandStatus, setCommandStatus] = useState<Map<string, DeviceCommand>>(new Map());
   const [localIsConnected, setLocalIsConnected] = useState(isConnected);
   const [isLoading, setIsLoading] = useState(true);
+  const [imageData, setImageData] = useState<string | undefined>(undefined);
   
   // isConnected prop'u değiştiğinde, lokal state'i güncelle
   useEffect(() => {
@@ -364,12 +462,58 @@ function DeviceCommandPanel({ device, isConnected }: { device: { key: string; la
     }
   };
   
+  // Cihaz bağlandığında image data'yı al ve kaydet
+  useEffect(() => {
+    const handleDeviceMessage = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && detail.key === device.key) {
+        console.log('Received message from device:', detail);
+        
+        // Eğer mesajda base64 encoded image varsa, göster
+        if (detail.payload && detail.payload.image) {
+          console.log('Received image data from device');
+          setImageData(detail.payload.image);
+          
+          // Image'ı session storage'a kaydet (sayfa yenilendiğinde kaybolur)
+          try {
+            const imageKey = `device_image_${device.key}`;
+            sessionStorage.setItem(imageKey, detail.payload.image);
+          } catch (err) {
+            console.error('Error saving image data to sessionStorage:', err);
+          }
+        }
+      }
+    };
+    
+    // ReceiveFromDevice olaylarını dinle
+    document.addEventListener('signalr-message', handleDeviceMessage);
+    
+    // İlk yüklemede session storage'dan image'ı yükle
+    if (isConnected) {
+      try {
+        const imageKey = `device_image_${device.key}`;
+        const savedImage = sessionStorage.getItem(imageKey);
+        
+        if (savedImage) {
+          console.log(`Loaded saved image for device ${device.key}`);
+          setImageData(savedImage);
+        }
+      } catch (err) {
+        console.error('Error loading image from sessionStorage:', err);
+      }
+    }
+    
+    return () => {
+      document.removeEventListener('signalr-message', handleDeviceMessage);
+    };
+  }, [device.key, isConnected]);
+  
   // Cihaz bağlı değilse komutları gösterme
   if (!localIsConnected) {
     console.log(`DeviceCommandPanel: Device ${device.key} is not connected, showing disconnected message`);
     return (
-      <div className="mt-3 md:mt-6 rounded-md bg-zinc-50 dark:bg-zinc-900">
-        <p className="text-sm text-muted-foreground text-center py-4 md:py-6 px-3 md:px-4">
+      <div className="h-full flex items-center justify-center">
+        <p className="text-sm text-muted-foreground text-center">
           Device is disconnected. Connect the device to view available commands.
         </p>
       </div>
@@ -380,55 +524,62 @@ function DeviceCommandPanel({ device, isConnected }: { device: { key: string; la
   console.log('Command list:', commands);
   
   return (
-    <div className="space-y-6 md:space-y-8">
-      {isLoading ? (
-        null
-      ) : commands.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-4 md:py-6 px-3 md:px-4 border rounded-lg">
-          No commands available for this device.
-        </p>
-      ) : (
-        <>
-          {/* Command buttons with consistent spacing */}
-          <div className="flex flex-wrap gap-2 md:gap-4">
-            {commands.map(cmd => {
-              const { icon, color, label } = getCommandStatusInfo(cmd);
-              const isDisabled = (() => {
-                const command = commandStatus.get(cmd);
-                // Only disable the button if the command is actively being processed
-                return command && ['sending', 'accepted', 'running'].includes(command.status);
-              })();
-              
-              return (
-                <Button
-                  key={cmd}
-                  variant="outline"
-                  size="sm"
-                  className={`flex items-start justify-start gap-2 h-[60px] md:h-[68px] py-3 pl-4 pr-4 min-w-[120px] md:min-w-[140px] shadow-sm hover:shadow`}
-                  onClick={() => executeCommand(cmd)}
-                  disabled={isDisabled}
-                >
-                  <div className={`mt-0.5 ${color}`}>
-                    {icon}
-                  </div>
-                  <div className="flex flex-col items-start">
-                    <span className="font-medium text-sm truncate">{cmd}</span>
-                    <span className={`text-xs mt-1 ${color} ${commandStatus.has(cmd) ? 'opacity-80' : 'opacity-40'}`}>
-                      {commandStatus.has(cmd) ? label : <MoreHorizontal className="h-3 w-3" />}
-                    </span>
-                  </div>
-                  <span className="sr-only">{label}</span>
-                </Button>
-              );
-            })}
+    <div className="h-full flex flex-col max-h-full">
+      {/* Command panel content - removed header */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {isLoading ? (
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-          
-          {/* Content frame with consistent spacing */}
-          <div className="border rounded-lg w-full md:w-[512px] h-[300px] md:h-[384px] overflow-hidden">
-            {/* Frame is intentionally empty */}
+        ) : commands.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-sm text-muted-foreground text-center py-4 px-3 border rounded-lg">
+              No commands available for this device.
+            </p>
           </div>
-        </>
-      )}
+        ) : (
+          <div className="flex flex-col h-full">
+            {/* Command buttons - at the top with more spacing */}
+            <div className="flex flex-wrap gap-4 px-4 py-4">
+              {commands.map(cmd => {
+                const { icon, color, label } = getCommandStatusInfo(cmd);
+                const isDisabled = (() => {
+                  const command = commandStatus.get(cmd);
+                  // Only disable the button if the command is actively being processed
+                  return command && ['sending', 'accepted', 'running'].includes(command.status);
+                })();
+                
+                return (
+                  <Button
+                    key={cmd}
+                    variant="outline"
+                    size="sm"
+                    className={`flex items-start justify-start gap-2 h-14 py-2 px-4 min-w-[130px] shadow-sm hover:shadow`}
+                    onClick={() => executeCommand(cmd)}
+                    disabled={isDisabled}
+                  >
+                    <div className={`mt-0.5 ${color}`}>
+                      {icon}
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium text-sm truncate">{cmd}</span>
+                      <span className={`text-xs mt-1 ${color} ${commandStatus.has(cmd) ? 'opacity-80' : 'opacity-40'}`}>
+                        {commandStatus.has(cmd) ? label : <MoreHorizontal className="h-3 w-3" />}
+                      </span>
+                    </div>
+                    <span className="sr-only">{label}</span>
+                  </Button>
+                );
+              })}
+            </div>
+            
+            {/* Content frame - using flex instead of absolute positioning */}
+            <div className="flex-1 relative">
+              <ContentFrame imageData={imageData} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -812,15 +963,37 @@ export function DeviceList() {
     }
   };
   
+  // Render main content with commands panel
+  const renderMainContent = () => {
+    if (!selectedDevice) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <p className="text-muted-foreground">Select a device to view commands</p>
+        </div>
+      );
+    }
+    
+    const isConnected = enhancedDevices.find(d => d.key === selectedDevice.key)?.isConnected || false;
+    
+    return (
+      <DeviceCommandPanel 
+        key={`${selectedDevice.key}-${isConnected ? 'connected' : 'disconnected'}`}
+        device={selectedDevice} 
+        isConnected={isConnected} 
+      />
+    );
+  };
+  
   return (
     <>
-      {/* Device list - adjust spacing */}
-      <div className="mb-6 md:mb-8">
-        <div className="flex flex-wrap gap-2 md:gap-4">
+      {/* Device list - vertical layout for sidebar */}
+      <div className="space-y-3 w-full">
+        {/* Devices as vertical list - more compact */}
+        <div className="space-y-4">
           {enhancedDevices.map((device) => (
             <div 
               key={device.key}
-              className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 pl-3 md:pl-4 pr-2 md:pr-3 rounded-lg shadow-sm border cursor-pointer ${
+              className={`flex items-center justify-between py-2.5 px-3 rounded-md border cursor-pointer ${
                 device.isConnected 
                   ? 'border-green-200 dark:border-green-800 bg-green-50/80 dark:bg-green-900/10' 
                   : 'border-border bg-card'
@@ -831,11 +1004,11 @@ export function DeviceList() {
               }`}
               onClick={() => handleDeviceSelect(device)}
             >
-              <div className="flex items-center gap-2 md:gap-3">
+              <div className="flex items-center gap-2">
                 <div className="relative">
-                  <Monitor className="h-4 w-4 md:h-5 md:w-5 text-muted-foreground" />
+                  <Monitor className="h-4 w-4 text-muted-foreground" />
                   <div 
-                    className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${
+                    className={`absolute -bottom-0.5 -right-0.5 h-1 w-1 rounded-full ${
                       device.isConnected ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
                     }`}
                   />
@@ -845,41 +1018,34 @@ export function DeviceList() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 md:h-7 md:w-7 p-0 rounded-full ml-1 md:ml-1.5"
+                className="h-6 w-6 p-0 rounded-full"
                 onClick={(e) => {
                   e.stopPropagation(); // Tıklama olayının üst elemana geçmesini önle
                   openRemoveConfirmation(device);
                 }}
                 title="Remove device"
               >
-                <X className="h-3 w-3 md:h-3.5 md:w-3.5" />
+                <X className="h-3 w-3" />
                 <span className="sr-only">Remove</span>
               </Button>
             </div>
           ))}
-          
-          {/* Add Device Button - Shows + icon if devices exist, full text if no devices */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsAddDialogOpen(true)}
-            className={`flex items-center gap-1 md:gap-1.5 py-2 md:py-2.5 h-auto ${enhancedDevices.length > 0 ? 'px-2 md:px-3' : 'px-3 md:px-3.5'}`}
-          >
-            <Plus className="h-2 w-4 md:h-5 md:w-5" />
-            {enhancedDevices.length === 0 && <span>Add Device</span>}
-          </Button>
         </div>
+        
+        {/* Add Device Button - compact */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsAddDialogOpen(true)}
+          className="w-full h-8 text-sm py-0"
+        >
+          <Plus className="h-3.5 w-3.5 mr-2" />
+          Add Device
+        </Button>
       </div>
 
-      {/* Selected Device Commands Panel - with consistent spacing */}
-      {selectedDevice && (
-        <DeviceCommandPanel 
-          key={`${selectedDevice.key}-${enhancedDevices.find(d => d.key === selectedDevice.key)?.isConnected ? 'connected' : 'disconnected'}`}
-          device={selectedDevice} 
-          isConnected={enhancedDevices.find(d => d.key === selectedDevice.key)?.isConnected || false} 
-        />
-      )}
-
+      {/* Dialogs are placed outside the sidebar but still within the DeviceList component */}
+      
       {/* Remove Device Confirmation Dialog */}
       <Dialog open={!!deviceToRemove} onOpenChange={(open) => !open && setDeviceToRemove(null)}>
         <DialogContent className="sm:max-w-md">
@@ -944,6 +1110,16 @@ export function DeviceList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Inject the main content via portal into the main-content div */}
+      {typeof document !== 'undefined' && document.getElementById('main-content') && 
+        createPortal(
+          <div className="h-full">
+            {renderMainContent()}
+          </div>,
+          document.getElementById('main-content')!
+        )
+      }
     </>
   );
 } 

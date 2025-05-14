@@ -76,8 +76,16 @@ export function DeviceHub() {
   }, [isConnected, subscribeToDevices, subscribedKeys]);
 
   return (
-    <div className="container py-2 md:py-4">
-      <DeviceList />
+    <div className="h-full flex flex-col md:flex-row">
+      {/* Sidebar for device list - full width on mobile, sidebar on desktop */}
+      <div className="w-full md:w-[260px] border-b md:border-b-0 md:border-r px-4 py-5 md:h-full overflow-y-auto">
+        <DeviceList />
+      </div>
+      
+      {/* Main content area - no padding */}
+      <div id="main-content" className="flex-1 h-full overflow-hidden">
+        {/* Content will be rendered via portal from DeviceList */}
+      </div>
     </div>
   );
 } 
