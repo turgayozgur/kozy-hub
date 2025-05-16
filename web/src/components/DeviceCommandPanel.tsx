@@ -79,7 +79,7 @@ export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelPr
                   <button
                     onClick={() => executeCommand('screenshot')}
                     disabled={isCommandInProgress('screenshot', commandStatus)}
-                    className={`px-6 py-4 flex items-start gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-gray-50/50 dark:bg-gray-900/30 ${
+                    className={`px-6 py-4 flex items-start gap-2 hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors bg-gray-50/50 dark:bg-gray-900/30 ${
                       isCommandInProgress('screenshot', commandStatus) ? 'opacity-50' : ''
                     }`}
                   >
@@ -112,7 +112,7 @@ export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelPr
                       <button
                         onClick={() => executeCommand(cmd)}
                         disabled={isDisabled}
-                        className={`px-6 py-4 flex items-start gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
+                        className={`px-6 py-4 flex items-start gap-2 hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors ${
                           isDisabled ? 'opacity-50' : ''
                         }`}
                       >
@@ -137,7 +137,7 @@ export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelPr
               {showScreenshot && imageData ? (
                 <ContentFrame imageData={imageData} />
               ) : (
-                <div className="h-full w-full flex items-center justify-center bg-black border-t border-r border-b overflow-hidden">
+                <div className="h-full w-full flex items-center justify-center bg-black border-r border-b overflow-hidden">
                   <div className="relative w-[70%] h-[70%] mx-auto bg-background border shadow-md overflow-hidden">
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                       <Camera className="h-12 w-12 text-muted-foreground opacity-30 mb-4" />

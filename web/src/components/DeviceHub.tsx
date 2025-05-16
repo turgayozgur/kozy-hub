@@ -78,7 +78,7 @@ export function DeviceHub() {
   return (
     <div className="h-full flex flex-col md:flex-row">
       {/* Sidebar for device list - full width on mobile, sidebar on desktop */}
-      <div className="w-full md:w-[300px] border-b md:border-b-0 md:border-r px-4 py-5 md:h-full overflow-y-auto">
+      <div className="w-full md:w-[300px] border-b md:border-b-0 md:border-r md:h-full overflow-y-auto">
         <DeviceList />
       </div>
       

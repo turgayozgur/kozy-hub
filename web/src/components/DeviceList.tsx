@@ -351,62 +351,143 @@ export function DeviceList() {
   return (
     <>
       {/* Device list - vertical layout for sidebar */}
-      <div className="space-y-4 w-full">
-        {/* Devices as vertical list */}
-        <div className="space-y-4 px-2">
-          {enhancedDevices.map((device) => (
-            <div 
-              key={device.key}
-              className={`group flex items-center justify-between py-3 px-4 rounded-md border cursor-pointer ${
-                device.isConnected 
-                  ? 'border-green-200 dark:border-green-800 bg-green-50/80 dark:bg-green-900/10' 
-                  : 'border-border bg-card'
-              } ${
-                selectedDevice?.key === device.key 
-                  ? 'ring-1 ring-primary ring-offset-1' 
-                  : ''
-              }`}
-              onClick={() => handleDeviceSelect(device)}
-            >
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <Monitor className="h-4 w-4 text-muted-foreground" />
-                  <div 
-                    className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${
-                      device.isConnected ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                    }`}
-                  />
-                </div>
-                <span className="font-medium">{device.displayName}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openRemoveConfirmation(device);
-                }}
-                title="Remove device"
+      <div className="w-full">
+        {/* Devices list with responsive layout - vertical on desktop, horizontal on mobile */}
+        <div className="overflow-x-auto md:overflow-x-visible w-full">
+          {/* Mobile view (horizontal scrolling) */}
+          <div className="flex md:hidden w-full border-b">
+            {enhancedDevices.map((device, index) => (
+              <div 
+                key={device.key}
+                className={`flex-shrink-0 ${index !== 0 ? 'border-l' : ''}`}
               >
-                <X className="h-4 w-4" />
-                <span className="sr-only">Remove</span>
-              </Button>
+                <button
+                  className={`group px-6 py-4 flex items-center gap-2 transition-colors ${
+                    selectedDevice?.key === device.key 
+                      ? 'bg-gray-100 dark:bg-gray-800' 
+                      : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50'
+                  } ${
+                    device.isConnected ? 'border-t-2 border-t-green-500' : 'border-t-2 border-t-transparent'
+                  }`}
+                  onClick={() => handleDeviceSelect(device)}
+                >
+                  <div className="flex items-start gap-2 flex-1">
+                    <div className="relative mt-1">
+                      <Monitor className="h-4 w-4 text-muted-foreground" />
+                      <div 
+                        className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${
+                          device.isConnected ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                        }`}
+                      />
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium">{device.displayName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {device.isConnected ? 'Connected' : 'Disconnected'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openRemoveConfirmation(device);
+                    }}
+                    title="Remove device"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Remove</span>
+                  </button>
+                </button>
+              </div>
+            ))}
+            
+            {/* Add Device Button for mobile view */}
+            <div className="flex-shrink-0 border-l">
+              <button
+                className="group px-6 py-4 flex items-center gap-2 transition-colors hover:bg-gray-50/80 dark:hover:bg-gray-800/50"
+                onClick={() => setIsAddDialogOpen(true)}
+              >
+                <div className="flex items-start gap-2 flex-1">
+                  <div className="relative mt-1">
+                    <Plus className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">Add Device</span>
+                    <span className="text-xs text-muted-foreground">
+                      Connect new device
+                    </span>
+                  </div>
+                </div>
+              </button>
             </div>
-          ))}
-        </div>
-        
-        {/* Add Device Button */}
-        <div className="px-2">
-          <Button
-            variant="outline"
-            size="default"
-            onClick={() => setIsAddDialogOpen(true)}
-            className="w-full py-2"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Device
-          </Button>
+          </div>
+
+          {/* Desktop view (vertical list) */}
+          <div className="hidden md:block divide-y w-full border-b">
+            {enhancedDevices.map((device) => (
+              <div key={device.key} className="w-full">
+                <button
+                  className={`group w-full px-6 py-4 flex items-center gap-2 transition-colors ${
+                    selectedDevice?.key === device.key 
+                      ? 'bg-gray-100 dark:bg-gray-800' 
+                      : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50'
+                  } ${
+                    device.isConnected ? 'border-l-2 border-l-green-500' : 'border-l-2 border-l-transparent'
+                  }`}
+                  onClick={() => handleDeviceSelect(device)}
+                >
+                  <div className="flex items-start gap-2 flex-1">
+                    <div className="relative mt-1">
+                      <Monitor className="h-4 w-4 text-muted-foreground" />
+                      <div 
+                        className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${
+                          device.isConnected ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                        }`}
+                      />
+                    </div>
+                    <div className="flex flex-col items-start flex-1">
+                      <span className="font-medium">{device.displayName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {device.isConnected ? 'Connected' : 'Disconnected'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openRemoveConfirmation(device);
+                    }}
+                    title="Remove device"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Remove</span>
+                  </button>
+                </button>
+              </div>
+            ))}
+            
+            {/* Add Device Button for desktop view */}
+            <div className="w-full">
+              <button
+                className="group w-full px-6 py-4 flex items-center gap-2 transition-colors hover:bg-gray-50/80 dark:hover:bg-gray-800/50 border-l-2 border-l-transparent"
+                onClick={() => setIsAddDialogOpen(true)}
+              >
+                <div className="flex items-start gap-2 flex-1">
+                  <div className="relative mt-1">
+                    <Plus className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex flex-col items-start flex-1">
+                    <span className="font-medium">Add Device</span>
+                    <span className="text-xs text-muted-foreground">
+                      Connect new device
+                    </span>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       
