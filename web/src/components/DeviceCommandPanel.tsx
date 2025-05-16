@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
-import { Loader2, MoreHorizontal, ImageIcon, PinIcon } from 'lucide-react';
+import { Loader2, MoreHorizontal, ImageIcon, PinIcon, Camera } from 'lucide-react';
 import { ContentFrame } from './ContentFrame';
 import { useDeviceCommands } from '../hooks/useDeviceCommands';
 import { getCommandStatusInfo, isCommandInProgress } from '../utils';
@@ -85,7 +85,7 @@ export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelPr
                   >
                     <div className="flex items-center mt-1 text-blue-500">
                       <PinIcon className="h-3 w-3 mr-1" />
-                      <ImageIcon className="h-4 w-4" />
+                      <Camera className="h-4 w-4" />
                     </div>
                     <div className="flex flex-col items-start">
                       <span className="font-medium">Screenshot</span>
@@ -140,14 +140,15 @@ export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelPr
                 <div className="h-full w-full flex items-center justify-center bg-black border-t border-r border-b overflow-hidden">
                   <div className="relative w-[70%] h-[70%] mx-auto bg-background border shadow-md overflow-hidden">
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <ImageIcon className="h-12 w-12 text-muted-foreground opacity-30 mb-4" />
-                      <p className="text-muted-foreground mb-6">No screenshot available</p>
+                      <Camera className="h-12 w-12 text-muted-foreground opacity-30 mb-4" />
+                      <p className="text-muted-foreground mb-2">Ready to see your device screen?</p>
+                      <p className="text-xs text-muted-foreground mb-6">Click the button below to take a screenshot</p>
                       <Button 
                         onClick={handleScreenshotRequest}
                         variant="outline"
                         className="bg-transparent"
                       >
-                        <ImageIcon className="h-4 w-4 mr-2" />
+                        <Camera className="h-4 w-4 mr-2" />
                         Capture Screen
                       </Button>
                     </div>
