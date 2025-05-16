@@ -351,13 +351,13 @@ export function DeviceList() {
   return (
     <>
       {/* Device list - vertical layout for sidebar */}
-      <div className="space-y-3 w-full">
+      <div className="space-y-4 w-full">
         {/* Devices as vertical list */}
-        <div className="space-y-4">
+        <div className="space-y-4 px-2">
           {enhancedDevices.map((device) => (
             <div 
               key={device.key}
-              className={`flex items-center justify-between py-2.5 px-3 rounded-md border cursor-pointer ${
+              className={`group flex items-center justify-between py-3 px-4 rounded-md border cursor-pointer ${
                 device.isConnected 
                   ? 'border-green-200 dark:border-green-800 bg-green-50/80 dark:bg-green-900/10' 
                   : 'border-border bg-card'
@@ -368,28 +368,28 @@ export function DeviceList() {
               }`}
               onClick={() => handleDeviceSelect(device)}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <div className="relative">
                   <Monitor className="h-4 w-4 text-muted-foreground" />
                   <div 
-                    className={`absolute -bottom-0.5 -right-0.5 h-1 w-1 rounded-full ${
+                    className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${
                       device.isConnected ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
                     }`}
                   />
                 </div>
-                <span className="font-medium text-sm">{device.displayName}</span>
+                <span className="font-medium">{device.displayName}</span>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 rounded-full"
+                className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
                   openRemoveConfirmation(device);
                 }}
                 title="Remove device"
               >
-                <X className="h-3 w-3" />
+                <X className="h-4 w-4" />
                 <span className="sr-only">Remove</span>
               </Button>
             </div>
@@ -397,15 +397,17 @@ export function DeviceList() {
         </div>
         
         {/* Add Device Button */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setIsAddDialogOpen(true)}
-          className="w-full h-8 text-sm py-0"
-        >
-          <Plus className="h-3.5 w-3.5 mr-2" />
-          Add Device
-        </Button>
+        <div className="px-2">
+          <Button
+            variant="outline"
+            size="default"
+            onClick={() => setIsAddDialogOpen(true)}
+            className="w-full py-2"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Device
+          </Button>
+        </div>
       </div>
       
       {/* Remove Device Confirmation Dialog */}

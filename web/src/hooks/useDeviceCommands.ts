@@ -131,30 +131,9 @@ export const useDeviceCommands = (deviceKey: string) => {
         if (detail.payload && detail.payload.image) {
           console.log('Received image data from device');
           setImageData(detail.payload.image);
-          
-          // Save image to sessionStorage
-          try {
-            const imageKey = `device_image_${deviceKey}`;
-            sessionStorage.setItem(imageKey, detail.payload.image);
-          } catch (err) {
-            console.error('Error saving image data to sessionStorage:', err);
-          }
         }
       }
     };
-    
-    // Load saved image from sessionStorage
-    try {
-      const imageKey = `device_image_${deviceKey}`;
-      const savedImage = sessionStorage.getItem(imageKey);
-      
-      if (savedImage) {
-        console.log(`Loaded saved image for device ${deviceKey}`);
-        setImageData(savedImage);
-      }
-    } catch (err) {
-      console.error('Error loading image from sessionStorage:', err);
-    }
     
     // Listen for SignalR messages
     document.addEventListener('signalr-message', handleDeviceMessage);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
-import { Loader2, MoreHorizontal } from 'lucide-react';
+import { Loader2, MoreHorizontal, ImageIcon, PinIcon } from 'lucide-react';
 import { ContentFrame } from './ContentFrame';
 import { useDeviceCommands } from '../hooks/useDeviceCommands';
 import { getCommandStatusInfo, isCommandInProgress } from '../utils';
@@ -13,6 +13,7 @@ interface DeviceCommandPanelProps {
 
 export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelProps) {
   const [localIsConnected, setLocalIsConnected] = useState(isConnected);
+  const [showScreenshot, setShowScreenshot] = useState(false);
   
   // Use the device commands hook
   const {
@@ -28,6 +29,18 @@ export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelPr
     setLocalIsConnected(isConnected);
     console.log(`DeviceCommandPanel: isConnected prop changed to ${isConnected} for device ${device.key}`);
   }, [isConnected, device.key]);
+
+  // When a new screenshot is received, show it
+  useEffect(() => {
+    if (imageData) {
+      setShowScreenshot(true);
+    }
+  }, [imageData]);
+
+  // Handler for screenshot button
+  const handleScreenshotRequest = () => {
+    executeCommand('screenshot');
+  };
 
   // If device is not connected, show disconnected message
   if (!localIsConnected) {
@@ -58,39 +71,89 @@ export function DeviceCommandPanel({ device, isConnected }: DeviceCommandPanelPr
           </div>
         ) : (
           <div className="flex flex-col h-full w-full">
-            {/* Command buttons */}
-            <div className="flex flex-wrap gap-4 px-4 py-4 w-full">
-              {commands.map(cmd => {
-                const { icon, color, label } = getCommandStatusInfo(cmd, commandStatus);
-                const isDisabled = isCommandInProgress(cmd, commandStatus);
-                
-                return (
-                  <Button
-                    key={cmd}
-                    variant="outline"
-                    size="sm"
-                    className={`flex items-start justify-start gap-2 h-14 py-2 px-4 min-w-[130px] shadow-sm hover:shadow`}
-                    onClick={() => executeCommand(cmd)}
-                    disabled={isDisabled}
+            {/* Command navigation */}
+            <div className="w-full border-b overflow-x-auto">
+              <div className="flex w-full">
+                {/* Pinned Screenshot Command */}
+                <div className="flex-shrink-0 border-r">
+                  <button
+                    onClick={() => executeCommand('screenshot')}
+                    disabled={isCommandInProgress('screenshot', commandStatus)}
+                    className={`px-6 py-4 flex items-start gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-gray-50/50 dark:bg-gray-900/30 ${
+                      isCommandInProgress('screenshot', commandStatus) ? 'opacity-50' : ''
+                    }`}
                   >
-                    <div className={`mt-0.5 ${color}`}>
-                      {icon}
+                    <div className="flex items-center mt-1 text-blue-500">
+                      <PinIcon className="h-3 w-3 mr-1" />
+                      <ImageIcon className="h-4 w-4" />
                     </div>
                     <div className="flex flex-col items-start">
-                      <span className="font-medium text-sm truncate">{cmd}</span>
-                      <span className={`text-xs mt-1 ${color} ${commandStatus.has(cmd) ? 'opacity-80' : 'opacity-40'}`}>
-                        {commandStatus.has(cmd) ? label : <MoreHorizontal className="h-3 w-3" />}
+                      <span className="font-medium">Screenshot</span>
+                      <span className={`text-xs ${commandStatus.has('screenshot') ? 'text-blue-500 opacity-80' : 'text-muted-foreground opacity-40'}`}>
+                        {commandStatus.has('screenshot') ? getCommandStatusInfo('screenshot', commandStatus).label : "Capture screen"}
                       </span>
                     </div>
-                    <span className="sr-only">{label}</span>
-                  </Button>
-                );
-              })}
+                  </button>
+                </div>
+
+                {/* Regular Commands */}
+                {commands
+                  .filter(cmd => cmd !== 'screenshot') // Filter out screenshot if present in device commands
+                  .map((cmd, index) => {
+                  const { icon, color, label } = getCommandStatusInfo(cmd, commandStatus);
+                  const isDisabled = isCommandInProgress(cmd, commandStatus);
+                  const isLastItem = index === commands.filter(c => c !== 'screenshot').length - 1;
+                  
+                  return (
+                    <div 
+                      key={cmd} 
+                      className={`flex-shrink-0 ${index !== 0 ? 'border-l' : ''} ${isLastItem ? 'border-r' : ''}`}
+                    >
+                      <button
+                        onClick={() => executeCommand(cmd)}
+                        disabled={isDisabled}
+                        className={`px-6 py-4 flex items-start gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
+                          isDisabled ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <div className={`${color} mt-1`}>
+                          {icon}
+                        </div>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{cmd}</span>
+                          <span className={`text-xs ${color} ${commandStatus.has(cmd) ? 'opacity-80' : 'opacity-40'}`}>
+                            {commandStatus.has(cmd) ? label : "..."}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             
             {/* Content frame - fixed aspect ratio container */}
             <div className="flex-1 w-full min-h-0 overflow-hidden">
-              <ContentFrame imageData={imageData} />
+              {showScreenshot && imageData ? (
+                <ContentFrame imageData={imageData} />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center bg-black border-t border-r border-b overflow-hidden">
+                  <div className="relative w-[70%] h-[70%] mx-auto bg-background border shadow-md overflow-hidden">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <ImageIcon className="h-12 w-12 text-muted-foreground opacity-30 mb-4" />
+                      <p className="text-muted-foreground mb-6">No screenshot available</p>
+                      <Button 
+                        onClick={handleScreenshotRequest}
+                        variant="outline"
+                        className="bg-transparent"
+                      >
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Capture Screen
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
